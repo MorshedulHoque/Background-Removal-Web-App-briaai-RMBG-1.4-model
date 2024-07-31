@@ -3,7 +3,7 @@ from transformers import pipeline
 import os
 from PIL import Image
 from datetime import datetime
-import cv2
+import piexif
 
 app = Flask(__name__)
 
@@ -13,10 +13,26 @@ PROCESSED_FOLDER = os.path.join(app.static_folder, 'processed')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {'png', 'jpg'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def correct_image_orientation(image_path):
+    img = Image.open(image_path)
+    try:
+        exif_dict = piexif.load(img.info['exif'])
+        orientation = exif_dict['0th'].get(piexif.ImageIFD.Orientation, 1)
+        if orientation == 3:
+            img = img.rotate(180, expand=True)
+        elif orientation == 6:
+            img = img.rotate(270, expand=True)
+        elif orientation == 8:
+            img = img.rotate(90, expand=True)
+        img.save(image_path, "JPEG", exif=img.info['exif'])
+    except (KeyError, AttributeError, piexif.InvalidImageDataError):
+        # If there's no EXIF data or it's invalid, do nothing
+        pass
 
 @app.route('/', methods=['GET', 'POST'])
 def upload_file():
@@ -37,6 +53,9 @@ def upload_file():
             # Save the uploaded image
             file_path = os.path.join(UPLOAD_FOLDER, new_filename)
             file.save(file_path)
+
+            # Correct the image orientation
+            correct_image_orientation(file_path)
 
             # Convert PNG image to RGB format
             img = Image.open(file_path)
@@ -67,4 +86,5 @@ def upload_file():
     return render_template('show_images.html')
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Run the application on the local IP address
+    app.run(host='0.0.0.0', port=5000, debug=True)
